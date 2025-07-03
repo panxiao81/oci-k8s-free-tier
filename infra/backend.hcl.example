@@ -1,0 +1,2 @@
+region    = "<your_oci_region>"
+namespace = "<your_object_storage_namespace>"

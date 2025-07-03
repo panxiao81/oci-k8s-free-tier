@@ -1,0 +1,6 @@
+- The user is building a Kubernetes cluster on the OCI Always Free tier and prefers to manage infrastructure using Terraform.
+- For Terraform projects, the user prefers using an OCI Object Storage remote backend.
+- The user prefers to automate TLS management with cert-manager and Let's Encrypt, using Cloudflare for DNS-01 challenges.
+- The user values security and best practices, such as keeping secrets in .tfvars files (which are gitignored) and having corresponding .tfvars.example files for documentation.
+- The user wants to enforce OCI Always Free tier limits using Terraform quota policies to prevent costs.
+- The user is comfortable with helm CLI commands.

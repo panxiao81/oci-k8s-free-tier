@@ -1,0 +1,6 @@
+region         = "<your_oci_region>"
+compartment_id = "<your_compartment_ocid>"
+ssh_public_key = "<your_ssh_public_key>"
+
+cloudflare_api_token = "<your_cloudflare_api_token>"
+letsencrypt_email      = "<your_email_address>"
