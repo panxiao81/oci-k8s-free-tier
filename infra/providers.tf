@@ -16,6 +16,10 @@ terraform {
       source = "cloudflare/cloudflare"
       version = "~> 4.31.0"
     }
+    random = {
+      source  = "hashicorp/random"
+      version = "~> 3.6"
+    }
   }
 }
 
@@ -31,4 +35,8 @@ provider "helm" {
 
 provider "kubernetes" {
   config_path = "./kubeconfig"
+}
+
+provider "cloudflare" {
+  api_token = var.cloudflare_api_token
 }

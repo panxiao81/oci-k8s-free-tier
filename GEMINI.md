@@ -4,3 +4,7 @@
 - The user values security and best practices, such as keeping secrets in .tfvars files (which are gitignored) and having corresponding .tfvars.example files for documentation.
 - The user wants to enforce OCI Always Free tier limits using Terraform quota policies to prevent costs.
 - The user is comfortable with helm CLI commands.
+- The project is a Terraform-managed Kubernetes cluster deployed on Oracle Cloud Infrastructure (OCI) using the Always Free tier.
+- It includes configurations for core OCI infrastructure (IAM, network, storage), Kubernetes components (cert-manager, ingress controller), and observability (OpenTelemetry, APM, logging, monitoring).
+- The `infra/quota.tf` file is specifically for enforcing OCI Always Free tier limits.
+- The project uses a Makefile for automation and `node-init.sh` for Kubernetes node setup.

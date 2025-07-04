@@ -21,6 +21,9 @@ resource "helm_release" "nginx_ingress" {
             "oci.oraclecloud.com/load-balancer-type" = "nlb"
           }
         }
+        extraArgs = {
+          enable-ssl-passthrough = "true" # Enables SSL passthrough for secure connections
+        }
       }
       # This block instructs the Helm chart to create the required ConfigMap
       # for TCP services and expose the ports on the controller's service.
