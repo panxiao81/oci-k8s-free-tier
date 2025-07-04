@@ -1,152 +1,278 @@
 # OCI Kubernetes Free Tier Infrastructure
 
-This project provides Terraform code to set up a Kubernetes cluster (OKE) on Oracle Cloud Infrastructure's (OCI) Always Free tier. It includes automated TLS certificate management using `cert-manager` and Cloudflare.
+A complete Terraform-managed Kubernetes infrastructure on Oracle Cloud Infrastructure's Always Free tier, featuring distributed storage, identity management, and observability.
+
+## Architecture Overview
+
+This project deploys a production-ready Kubernetes cluster with:
+
+- **Kubernetes**: OKE (Oracle Kubernetes Engine) with ARM-based nodes
+- **Storage**: JuiceFS distributed file system with OCI Object Storage
+- **Identity**: Kanidm authentication and authorization
+- **Observability**: OpenTelemetry Collector for metrics and logs
+- **TLS**: Automated certificate management with cert-manager and Let's Encrypt
+- **DNS**: Cloudflare integration for automatic DNS management
 
 ## Features
 
-- **OCI Kubernetes Engine (OKE):** A managed Kubernetes service.
-- **Remote State:** Terraform state is stored securely in an OCI Object Storage bucket.
-- **NGINX Ingress Controller:** Manages external access to the services in your cluster.
-- **Automated HTTPS:** `cert-manager` is configured to automatically issue and renew free, trusted TLS certificates from Let's Encrypt using Cloudflare for DNS-01 challenges.
-- **Free Tier Quotas:** Includes a quota policy to help prevent accidental charges by enforcing Always Free tier limits for the Network Load Balancer.
+### 🆓 Always Free Tier Optimized
+- ARM-based instances (VM.Standard.A1.Flex)
+- 2 OCPUs, 12GB RAM across worker nodes
+- 50GB Object Storage and MySQL database
+- Network Load Balancer with quota policies
 
-## Prerequisites
+### 🔐 Security & Identity
+- Kanidm identity management with TLS passthrough
+- Automated password generation and Kubernetes secrets
+- Customer Secret Keys for secure Object Storage access
+- Let's Encrypt certificates with DNS-01 validation
 
-Before you begin, ensure you have the following:
+### 💾 Distributed Storage
+- JuiceFS POSIX-compliant distributed file system
+- OCI Object Storage backend with S3-compatible API
+- MySQL metadata store with automated user management
+- Dynamic PVC provisioning via CSI driver
 
-- An OCI account with the CLI configured.
-- Terraform installed.
-- A domain name managed by Cloudflare.
-- A Cloudflare API Token with `Zone:Zone:Read` and `Zone:DNS:Edit` permissions.
+### 📊 Observability
+- OpenTelemetry Collector for unified telemetry
+- Console exporter for debugging (easily configurable)
+- Ready for integration with monitoring backends
 
-## Setup
+## Quick Start
 
-1.  **Clone the repository:**
-    ```bash
-    git clone <your-repo-url>
-    cd oci-k8s-free-tier/infra
-    ```
+### Prerequisites
 
-2.  **Configure Terraform Backend:**
-    -   Rename `backend.hcl.example` to `backend.hcl`.
-    -   Update the file with your OCI region and Object Storage namespace.
+1. **OCI Account**: Oracle Cloud Infrastructure account with Always Free tier
+2. **Terraform**: Version 1.0 or later
+3. **Cloudflare**: Domain with API token for DNS management
+4. **SSH Key**: Public key for node access
 
-3.  **Configure Terraform Variables:**
-    -   Rename `terraform.tfvars.example` to `terraform.tfvars`.
-    -   Fill in the required values:
-        -   `region`: Your OCI region.
-        -   `compartment_id`: The OCID of your compartment.
-        -   `ssh_public_key`: Your public SSH key.
-        -   `cloudflare_api_token`: Your Cloudflare API token.
-        -   `letsencrypt_email`: The email address for Let's Encrypt registration.
+### Configuration
 
-## Usage
+1. **Clone and navigate to infrastructure directory**:
+   ```bash
+   git clone <repository-url>
+   cd oci-k8s-free-tier/infra
+   ```
 
-1.  **Initialize Terraform:**
-    ```bash
-    make init
-    ```
-    Alternatively, you can run the full command:
-    ```bash
-    terraform init -backend-config=backend.hcl
-    ```
+2. **Configure backend storage** (create `backend.hcl`):
+   ```hcl
+   bucket = "your-terraform-state-bucket"
+   key    = "terraform.tfstate"
+   region = "us-ashburn-1"
+   namespace = "your-object-storage-namespace"
+   ```
 
-2.  **Deploy the infrastructure:**
-    ```bash
-    terraform apply
-    ```
+3. **Configure variables** (create `terraform.tfvars`):
+   ```hcl
+   # OCI Configuration
+   compartment_id = "ocid1.compartment.oc1.."
+   region = "us-ashburn-1"
+   ssh_public_key = "ssh-rsa AAAAB3NzaC1yc2E..."
+   
+   # Cloudflare DNS
+   cloudflare_api_token = "your-cloudflare-token"
+   
+   # Let's Encrypt
+   letsencrypt_email = "your-email@example.com"
+   
+   # Services
+   kanidm_domain = "auth.yourdomain.com"
+   juicefs_bucket_name = "your-juicefs-bucket"
+   
+   # Optional
+   object_storage_private_endpoint = "https://your-private-endpoint"
+   ```
 
-3.  **Destroy the infrastructure:**
-    ```bash
-    terraform destroy
-    ```
+### Deployment
 
-## Deploying an Application
+1. **Initialize Terraform**:
+   ```bash
+   make init
+   # or
+   terraform init -backend-config=backend.hcl
+   ```
 
-To deploy an application and secure it with an HTTPS certificate, create a new `.tf` file (e.g., `my-app.tf`) with a deployment, service, and ingress resource.
+2. **Plan and apply**:
+   ```bash
+   terraform plan
+   terraform apply
+   ```
 
-Here is an example:
+3. **Configure kubectl**:
+   ```bash
+   export KUBECONFIG=./kubeconfig
+   kubectl get nodes
+   ```
 
-```terraform
-resource "kubernetes_deployment" "my_app" {
-  metadata {
-    name = "my-app"
-  }
-  spec {
-    replicas = 1
-    selector {
-      match_labels = {
-        app = "my-app"
-      }
-    }
-    template {
-      metadata {
-        labels = {
-          app = "my-app"
-        }
-      }
-      spec {
-        container {
-          image = "nginx"
-          name  = "my-app"
-        }
-      }
-    }
-  }
-}
+## Infrastructure Components
 
-resource "kubernetes_service" "my_app" {
-  metadata {
-    name = "my-app"
-  }
-  spec {
-    selector = {
-      app = "my-app"
-    }
-    port {
-      port        = 80
-    }
-  }
-}
-
-resource "kubernetes_ingress_v1" "my_app_ingress" {
-  metadata {
-    name = "my-app-ingress"
-    annotations = {
-      // Use 'letsencrypt-prod' for trusted certificates
-      // or 'letsencrypt-staging' for testing.
-      "cert-manager.io/cluster-issuer" = "letsencrypt-prod"
-    }
-  }
-  spec {
-    ingress_class_name = "nginx"
-    tls {
-      hosts      = ["your.domain.com"]
-      secret_name = "my-app-tls"
-    }
-    rule {
-      host = "your.domain.com"
-      http {
-        paths {
-          path      = "/"
-          path_type = "Prefix"
-          backend {
-            service {
-              name = "my-app"
-              port {
-                number = 80
-              }
-            }
-          }
-        }
-      }
-    }
-  }
-}
+### Network Architecture
+```
+VCN (10.0.0.0/16)
+├── Public Subnet (10.0.0.0/24)
+│   ├── API Server
+│   └── Network Load Balancer
+└── Private Subnet (10.0.1.0/24)
+    ├── Worker Nodes
+    └── Pods (10.244.0.0/16)
 ```
 
-Replace `your.domain.com` with your actual domain. When you run `terraform apply`, `cert-manager` will automatically obtain a certificate for your domain.
+### Storage Stack
+```
+Applications
+    ↓
+JuiceFS CSI Driver
+    ↓
+JuiceFS Client
+    ↓
+┌─────────────────┬─────────────────┐
+│   OCI Object    │   MySQL         │
+│   Storage       │   Metadata      │
+│   (Data)        │   (Filesystem)  │
+└─────────────────┴─────────────────┘
+```
 
-> This repo is fully powered by Gimini code assist and Gimini CLI!
->
-> AI Powered!
+### Key Services
+
+| Service | Namespace | Domain | Purpose |
+|---------|-----------|---------|---------|
+| Kanidm | `kanidm` | `auth.yourdomain.com` | Identity Management |
+| JuiceFS Dashboard | `juicefs` | `juicefs.admin.yourdomain.com` | Storage Management |
+| OTel Collector | `otel` | N/A | Observability |
+
+## Usage Examples
+
+### Using JuiceFS Storage
+
+```yaml
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: app-data
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: juicefs-sc
+  resources:
+    requests:
+      storage: 10Gi
+```
+
+### Deploying Applications with TLS
+
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: my-app
+  annotations:
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - app.yourdomain.com
+      secretName: app-tls
+  rules:
+    - host: app.yourdomain.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: my-app
+                port:
+                  number: 80
+```
+
+## Management Commands
+
+### Cluster Operations
+```bash
+# Check cluster status
+kubectl get nodes
+kubectl get pods -A
+
+# Access generated passwords
+terraform output mysql_admin_password
+kubectl get secret mysql-passwords -o jsonpath='{.data.admin_password}' | base64 -d
+
+# Scale applications
+kubectl scale deployment my-app --replicas=3
+```
+
+### Storage Management
+```bash
+# List JuiceFS volumes
+kubectl get pv | grep juicefs
+
+# Check JuiceFS dashboard
+kubectl port-forward -n juicefs svc/juicefs-dashboard 9567:9567
+```
+
+### Certificate Management
+```bash
+# Check certificate status
+kubectl get certificates -A
+kubectl describe certificate app-tls
+
+# Force certificate renewal
+kubectl delete certificate app-tls
+```
+
+## Monitoring & Troubleshooting
+
+### Logs
+```bash
+# JuiceFS CSI driver
+kubectl logs -n juicefs -l app.kubernetes.io/name=juicefs-csi-driver
+
+# cert-manager
+kubectl logs -n cert-manager -l app=cert-manager
+
+# NGINX Ingress
+kubectl logs -n ingress-nginx -l app.kubernetes.io/name=ingress-nginx
+```
+
+### Common Issues
+
+1. **Certificate not issued**: Check DNS propagation and Cloudflare API token
+2. **JuiceFS mount failures**: Verify MySQL connectivity and credentials
+3. **Pod scheduling issues**: Check node resources and taints
+
+## Cost Optimization
+
+This infrastructure is designed to run within OCI's Always Free tier limits:
+
+- **Compute**: 2 OCPUs ARM instances (4 OCPUs total across 2 nodes)
+- **Storage**: 20GB Object Storage + 50GB MySQL
+- **Network**: 10TB outbound data transfer
+- **Load Balancer**: 1 Network Load Balancer
+
+## Security Considerations
+
+- All secrets are managed via Kubernetes and Terraform
+- TLS termination at ingress level
+- Private subnet for worker nodes
+- Customer Secret Keys for Object Storage access
+- MySQL accessible only from private subnet
+
+## Contributing
+
+1. Follow existing Terraform patterns and conventions
+2. Update `terraform.tfvars.example` when adding new variables
+3. Test changes in staging environment first
+4. Document any architectural changes
+
+## License
+
+This project is licensed under the MIT License - see the LICENSE file for details.
+
+## Support
+
+For issues and questions:
+- Check the troubleshooting section above
+- Review Terraform logs: `terraform apply -debug`
+- Examine Kubernetes events: `kubectl get events -A`

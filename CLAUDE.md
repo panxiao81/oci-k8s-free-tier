@@ -128,3 +128,70 @@ Create new `.tf` files for applications using this pattern:
 - Use `.tfvars` files (gitignored) for secrets
 - SSH access to nodes requires private key corresponding to `ssh_public_key`
 - Cluster API server is publicly accessible but secured with RBAC
+
+## Technical Challenges and Solutions
+
+### MySQL Password URL Encoding Issues
+**Problem**: JuiceFS connection strings break when MySQL passwords contain special characters (particularly `@`)
+**Solution**: 
+- Added `keepers` block in `passwords.tf` to force password regeneration
+- Configure MySQL with relaxed password validation policies
+- Use URL-safe password generation in Terraform
+
+### Docker Hub Rate Limiting
+**Problem**: Container pulls fail due to Docker Hub rate limits
+**Solution**: 
+- Configure `imagePullSecrets` in deployments
+- Set `imagePullPolicy: IfNotPresent` to reduce pulls
+- Use existing `docker-hub` secret for authentication
+
+### Object Storage Authentication
+**Problem**: Complex S3-compatible API integration with proper authentication
+**Solution**:
+- Use Customer Secret Keys instead of API keys for S3 compatibility
+- Automated namespace discovery via data sources
+- Proper IAM permissions for Object Storage access
+
+## Operational Memory
+
+### Key Services and Domains
+- **Kanidm**: `kanidm` namespace, `auth.yourdomain.com` domain
+- **JuiceFS Dashboard**: `juicefs` namespace, `juicefs.admin.yourdomain.com` domain
+- **OpenTelemetry Collector**: `otel` namespace, internal service only
+
+### Password Management Strategy
+- All passwords automatically generated via `random_password` resources
+- Stored in Kubernetes secrets for runtime access
+- Terraform outputs available for administrative access
+- No manual password management required
+
+### Common Troubleshooting Steps
+1. **JuiceFS Mount Issues**: Check CSI driver logs and MySQL connectivity
+2. **Certificate Problems**: Verify DNS propagation and Cloudflare API token
+3. **Pod Scheduling**: Check node resources and taints
+4. **Service Access**: Use port forwarding or verify ingress configuration
+
+### Development Patterns
+- Create dedicated `.tf` files for each service
+- Use existing patterns for secrets and configuration
+- Add DNS records to `dns.tf` for new services
+- Configure ingress with cert-manager annotations
+- Update `terraform.tfvars.example` for new variables
+
+## Free Tier Resource Limits
+- **Compute**: 2 OCPUs ARM instances (4 OCPUs total across 2 nodes)
+- **Memory**: 12GB RAM across all nodes
+- **Storage**: 20GB Object Storage + 50GB MySQL database
+- **Network**: 10TB outbound data transfer per month
+- **Load Balancer**: 1 Network Load Balancer included
+
+## Project Evolution Notes
+This project evolved from a basic OKE cluster to include:
+1. OpenTelemetry Collector for observability
+2. Kanidm for identity management
+3. JuiceFS for distributed storage
+4. MySQL backend for JuiceFS metadata
+5. Automated DNS management
+6. Comprehensive password and secret management
+
+The infrastructure is designed to be production-ready while staying within OCI's Always Free tier limits.
