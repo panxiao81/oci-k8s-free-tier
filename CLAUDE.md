@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is a Terraform project that deploys a Kubernetes cluster (OKE) on Oracle Cloud Infrastructure's Always Free tier with automated TLS certificate management using cert-manager and Cloudflare DNS-01 challenges.
+This is a Terraform project that deploys a production-ready Kubernetes cluster (OKE) on Oracle Cloud Infrastructure's Always Free tier with comprehensive OAuth2 authentication, monitoring, and automated TLS certificate management using cert-manager and Cloudflare DNS-01 challenges.
 
 ## Key Infrastructure Components
 
@@ -14,7 +14,9 @@ This is a Terraform project that deploys a Kubernetes cluster (OKE) on Oracle Cl
 - **TLS Management**: cert-manager with Let's Encrypt (staging and production issuers)
 - **Ingress**: NGINX Ingress Controller for L7 traffic routing
 - **Storage**: JuiceFS distributed file system using OCI Object Storage and MySQL
-- **Identity Management**: Kanidm for authentication and authorization
+- **Identity Management**: Kanidm OIDC provider for centralized authentication
+- **Monitoring**: Victoria Metrics + Grafana + OpenTelemetry Collector for observability
+- **External Authentication**: oauth2-proxy for protecting non-OAuth2 applications
 
 ## Common Commands
 
@@ -42,9 +44,13 @@ kubectl get nodes
 # View generated passwords (if needed for troubleshooting)
 terraform output mysql_admin_password
 terraform output juicefs_mysql_password
+terraform output grafana_admin_password
 
-# Access passwords from Kubernetes secret
+# Access passwords from Kubernetes secret (if mysql-passwords secret exists)
 kubectl get secret mysql-passwords -o jsonpath='{.data.admin_password}' | base64 -d
+
+# Reset Kanidm admin password for initial setup
+kubectl exec -n kanidm $(kubectl get pods -n kanidm -l app=kanidm -o name) -- kanidmd recover-account -c /data/server.toml idm_admin
 ```
 
 ## Configuration Files
@@ -54,10 +60,18 @@ kubectl get secret mysql-passwords -o jsonpath='{.data.admin_password}' | base64
   - `compartment_id`: OCI compartment OCID
   - `region`: OCI region
   - `ssh_public_key`: SSH public key for node access
+  - `base_domain`: Base domain for all services (e.g., "example.com")
+  - `admin_subdomain`: Admin subdomain for administrative services (default: "admin")
   - `cloudflare_api_token`: Cloudflare API token for DNS-01 challenges
   - `letsencrypt_email`: Email for Let's Encrypt certificate registration
   - `kanidm_domain`: Domain name for Kanidm authentication service
   - `juicefs_bucket_name`: Object Storage bucket name for JuiceFS
+  - `grafana_oauth_client_secret`: OAuth2 client secret for Grafana authentication
+  - `oauth2_proxy_client_id`: OAuth2 client ID for oauth2-proxy (default: "juicefs-proxy")
+  - `oauth2_proxy_client_secret`: OAuth2 client secret for oauth2-proxy authentication
+  - `docker_hub_username`: Docker Hub username for image pull secrets
+  - `docker_hub_password`: Docker Hub password or access token
+  - `docker_hub_email`: Docker Hub email address
   - `object_storage_private_endpoint`: (Optional) Private endpoint URL for Object Storage
 
 ## Development Guidelines
@@ -65,8 +79,10 @@ kubectl get secret mysql-passwords -o jsonpath='{.data.admin_password}' | base64
 - **New Variables**: When creating new Terraform variables, always update `terraform.tfvars.example` using the `<your_variable_name>` format for consistency
 - **Customer Secret Keys**: For OCI S3-compatible API access, use Customer Secret Keys (not API keys). Credentials are stored in Kubernetes secrets for better security
 - **Secrets Management**: Sensitive data like API keys are stored in Kubernetes secrets, not in terraform.tfvars files
+- **OAuth2 Configuration**: Set up OAuth2 clients in Kanidm before applying Terraform configurations
+- **Domain Variables**: Use domain variables instead of hardcoding domains for deployment flexibility
 - **Private Endpoints**: Object Storage private endpoints must be created manually in OCI Console (no Terraform resource available)
-- **Password Management**: Database passwords are automatically generated using `random_password` resources - no manual password management needed
+- **Password Management**: All passwords automatically generated using `random_password` resources - no manual password management needed
 
 ## Architecture Notes
 
@@ -87,6 +103,14 @@ kubectl get secret mysql-passwords -o jsonpath='{.data.admin_password}' | base64
 - Two ClusterIssuers: `letsencrypt-staging` and `letsencrypt-prod`
 - Uses Cloudflare DNS-01 solver for wildcard certificates
 - Automatic certificate provisioning via ingress annotations
+- Certificate sharing between services on the same domain
+
+### Authentication Architecture
+- **Kanidm**: Central OIDC identity provider with ES256 token signing
+- **Direct OAuth2**: Grafana integrates directly with Kanidm OIDC
+- **External Auth**: oauth2-proxy protects non-OAuth2 applications via NGINX ingress
+- **Group-based Access**: Uses `infra_admin@{kanidm_domain}` for authorization
+- **PKCE Disabled**: oauth2-proxy configured without PKCE for compatibility
 
 ### Storage Architecture
 - **JuiceFS**: Distributed POSIX-compliant file system
@@ -103,16 +127,44 @@ Create new `.tf` files for applications using this pattern:
 ```terraform
 # Use cert-manager.io/cluster-issuer annotation with "letsencrypt-staging" or "letsencrypt-prod"
 # Set ingress_class_name = "nginx"
-# Configure TLS with your domain
+# Configure TLS with domain variables
+# For OAuth2 protection, add external auth annotations:
+# nginx.ingress.kubernetes.io/auth-url = "https://your-domain/oauth2/auth"
+# nginx.ingress.kubernetes.io/auth-signin = "https://your-domain/oauth2/start?rd=$escaped_request_uri"
 ```
 
 ## Important Files
 
+### Core Infrastructure
 - `main.tf`: OKE cluster and node pool configuration
 - `network.tf`: VCN and subnet configuration using oracle-terraform-modules/vcn
+- `data.tf`: OCI data sources for availability domains
+- `quota.tf`: Always Free tier quota enforcement policies
+
+### Security & Authentication
+- `kanidm.tf`: Kanidm OIDC identity provider deployment
+- `oauth2-proxy.tf`: External authentication proxy for non-OAuth2 applications
+- `docker-hub-secret.tf`: Docker registry secrets across all namespaces
+
+### Networking & TLS
 - `cert-manager.tf`: Helm chart deployment and ClusterIssuer setup
 - `ingress-controller.tf`: NGINX Ingress Controller with OCI NLB annotations
-- `quota.tf`: Free tier quota enforcement
+- `dns.tf`: Cloudflare DNS record management with domain variables
+
+### Storage & Data
+- `juicefs.tf`: Distributed file system deployment with external auth
+- `juicefs-iam.tf`: IAM policies for JuiceFS Object Storage access
+- `passwords.tf`: Random password generation for all services
+
+### Monitoring & Observability
+- `victoria-stack.tf`: Victoria Metrics + Grafana with OAuth2 integration
+- `otel-collector.tf`: OpenTelemetry Collector for metrics and logs
+- `metrics-server.tf`: Kubernetes resource monitoring
+- `otel-config.yaml.tpl`: OpenTelemetry configuration template
+
+### Configuration
+- `_variables.tf`: All Terraform variables and their defaults
+- `terraform.tfvars.example`: Example configuration file
 - `node-init.sh`: Kubernetes node initialization script
 
 ## Terraform Providers
@@ -152,11 +204,27 @@ Create new `.tf` files for applications using this pattern:
 - Automated namespace discovery via data sources
 - Proper IAM permissions for Object Storage access
 
+### OAuth2 Authentication Integration
+**Problem**: Non-OAuth2 applications need protection with centralized authentication
+**Solution**:
+- Deploy oauth2-proxy as external authentication layer
+- Use NGINX Ingress external auth annotations
+- Configure group-based authorization with full Kanidm domain format
+- Disable PKCE for application compatibility
+
+### OAuth2-Proxy Cookie Secret Issues
+**Problem**: Cookie secret validation fails with "must be 16, 24, or 32 bytes" error
+**Solution**:
+- Generate exactly 32-byte random password without base64 encoding
+- Use raw `random_password.result` value directly in Kubernetes secret
+
 ## Operational Memory
 
 ### Key Services and Domains
-- **Kanidm**: `kanidm` namespace, `auth.yourdomain.com` domain
-- **JuiceFS Dashboard**: `juicefs` namespace, `juicefs.admin.yourdomain.com` domain
+- **Kanidm**: `kanidm` namespace, `auth.{kanidm_domain}` (e.g., auth.example.com)
+- **Grafana**: `observability` namespace, `grafana.{admin_subdomain}.{base_domain}` (e.g., grafana.admin.example.com)
+- **JuiceFS Dashboard**: `juicefs` namespace, `juicefs.{admin_subdomain}.{base_domain}` (e.g., juicefs.admin.example.com)
+- **OAuth2-Proxy**: `juicefs` namespace, serves `/oauth2/*` endpoints for JuiceFS authentication
 - **OpenTelemetry Collector**: `otel` namespace, internal service only
 
 ### Password Management Strategy
@@ -166,17 +234,33 @@ Create new `.tf` files for applications using this pattern:
 - No manual password management required
 
 ### Common Troubleshooting Steps
-1. **JuiceFS Mount Issues**: Check CSI driver logs and MySQL connectivity
-2. **Certificate Problems**: Verify DNS propagation and Cloudflare API token
-3. **Pod Scheduling**: Check node resources and taints
-4. **Service Access**: Use port forwarding or verify ingress configuration
+1. **OAuth2 Authentication Issues**: 
+   - Check oauth2-proxy logs: `kubectl logs -n juicefs -l app.kubernetes.io/name=oauth2-proxy`
+   - Verify user is in `infra_admin@{kanidm_domain}` group
+   - Ensure OAuth2 client secret matches between Kanidm and Terraform
+2. **JuiceFS Mount Issues**: Check CSI driver logs and MySQL connectivity
+3. **Certificate Problems**: Verify DNS propagation and Cloudflare API token
+4. **Pod Scheduling**: Check node resources and taints
+5. **Service Access**: Use port forwarding or verify ingress configuration
+6. **Kanidm Password Reset**: Use `kubectl exec` to run `kanidmd recover-account` command
 
 ### Development Patterns
 - Create dedicated `.tf` files for each service
 - Use existing patterns for secrets and configuration
-- Add DNS records to `dns.tf` for new services
-- Configure ingress with cert-manager annotations
+- Add DNS records to `dns.tf` for new services using domain variables
+- Configure ingress with cert-manager annotations and optional external auth
 - Update `terraform.tfvars.example` for new variables
+- Use `random_password` resources for all secret generation
+- Deploy Docker Hub secrets to all namespaces for rate limit protection
+
+### OAuth2 Setup Workflow
+1. **Reset Kanidm admin password**: Use kubectl exec with `kanidmd recover-account`
+2. **Create OAuth2 clients**: Use `kanidm system oauth2 create` for each application
+3. **Configure redirect URLs**: Add proper callback URLs for each client
+4. **Set up group mapping**: Map OAuth2 scopes to Kanidm groups
+5. **Disable PKCE if needed**: Use `warning-insecure-client-disable-pkce` for compatibility
+6. **Update Terraform variables**: Add client secrets to terraform.tfvars
+7. **Apply infrastructure**: Run `terraform apply` to deploy with authentication
 
 ## Free Tier Resource Limits
 - **Compute**: 2 OCPUs ARM instances (4 OCPUs total across 2 nodes)
@@ -187,11 +271,21 @@ Create new `.tf` files for applications using this pattern:
 
 ## Project Evolution Notes
 This project evolved from a basic OKE cluster to include:
-1. OpenTelemetry Collector for observability
-2. Kanidm for identity management
-3. JuiceFS for distributed storage
-4. MySQL backend for JuiceFS metadata
-5. Automated DNS management
-6. Comprehensive password and secret management
+1. **Core Infrastructure**: OKE cluster with ARM nodes and networking
+2. **Storage Layer**: JuiceFS distributed filesystem with Object Storage + MySQL backend
+3. **Identity Management**: Kanidm OIDC provider for centralized authentication
+4. **Monitoring Stack**: Victoria Metrics + Grafana + OpenTelemetry Collector
+5. **Security Layer**: OAuth2 authentication for all services via oauth2-proxy
+6. **Automation**: Automated DNS management and certificate provisioning
+7. **Observability**: Comprehensive metrics, logs, and monitoring
+8. **Secret Management**: Automated password generation and secret distribution
 
-The infrastructure is designed to be production-ready while staying within OCI's Always Free tier limits.
+The infrastructure is designed to be production-ready with enterprise-grade authentication, monitoring, and storage capabilities while staying within OCI's Always Free tier limits.
+
+## Current Architecture Summary
+- **Authentication**: Centralized OAuth2 via Kanidm protecting all administrative interfaces
+- **Storage**: Distributed POSIX filesystem with automatic CSI provisioning
+- **Monitoring**: Full observability stack with Grafana dashboards and metrics collection
+- **Security**: TLS everywhere, group-based authorization, automated secret management
+- **Scalability**: Container-ready with persistent storage and resource monitoring
+- **Cost**: $0/month within Always Free tier limits with quota enforcement
