@@ -26,10 +26,7 @@ resource "oci_containerengine_cluster" "k8s_cluster" {
 
     service_lb_subnet_ids = [module.vcn.subnet_all_attributes.public_subnet.id]
   }
-}
-
-data "oci_identity_availability_domains" "ads" {
-  compartment_id = var.compartment_id
+  type = "ENHANCED_CLUSTER"
 }
 
 resource "oci_containerengine_node_pool" "k8s_node_pool" {

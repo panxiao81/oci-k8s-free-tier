@@ -55,6 +55,10 @@ resource "oci_objectstorage_bucket" "juicefs_bucket" {
   depends_on = [oci_identity_policy.juicefs_policy]
 }
 
+data "oci_objectstorage_namespace" "juicefs_namespace" {
+  compartment_id = var.compartment_id
+}
+
 output "juicefs_access_key" {
   value       = oci_identity_customer_secret_key.juicefs_secret_key.id
   description = "Access key for JuiceFS S3-compatible API"
