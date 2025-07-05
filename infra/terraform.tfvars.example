@@ -5,6 +5,10 @@ ssh_public_key = "<your_ssh_public_key>"
 cloudflare_api_token = "<your_cloudflare_api_token>"
 letsencrypt_email    = "<your_email_address>"
 
+# Domain Configuration
+base_domain      = "<your_base_domain>"
+admin_subdomain  = "<your_admin_subdomain>"
+
 # Kanidm Authentication Service
 kanidm_domain = "<your_kanidm_domain>"
 
@@ -13,3 +17,17 @@ juicefs_bucket_name = "<your_juicefs_bucket_name>"
 
 # Optional: Private endpoint (create manually in OCI Console first)
 # object_storage_private_endpoint = "https://<private-endpoint-guid>.objectstorage.<region>.oci.customer-oci.com"
+
+# Grafana OAuth2 Configuration (update after setting up OAuth2 in Kanidm)
+# kanidm system oauth2 show-basic-secret grafana
+grafana_oauth_client_secret = "<your_grafana_oauth_client_secret>"
+
+# OAuth2 Proxy Configuration for JuiceFS Dashboard (update after setting up OAuth2 in Kanidm)
+# kanidm system oauth2 show-basic-secret juicefs-proxy
+oauth2_proxy_client_id     = "<your_oauth2_proxy_client_id>"
+oauth2_proxy_client_secret = "<your_oauth2_proxy_client_secret>"
+
+# Docker Hub Registry Credentials (to avoid rate limiting)
+docker_hub_username = "<your_docker_hub_username>"
+docker_hub_password = "<your_docker_hub_password_or_token>"
+docker_hub_email    = "<your_docker_hub_email>"
